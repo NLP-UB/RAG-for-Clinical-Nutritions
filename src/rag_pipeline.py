@@ -100,7 +100,7 @@ class RAGPipeline:
         context = " ".join([c[:800] for c in contexts])
         try:
             answer = self.generator.generate(context, query)
-        except Exception as e:
+        except Exception:
             answer = ""
         return answer, retrieved
 
