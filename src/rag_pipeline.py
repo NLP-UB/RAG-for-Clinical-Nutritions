@@ -6,10 +6,11 @@ from .vector_store import VectorStore
 from .retriever import Retriever
 from .generator import Generator
 from .ner_processor import NERProcessor
+from .config import DIMENSIONS
 
 class RAGPipeline:
-    def __init__(self, data_path="data", embed_model='all-MiniLM-L6-v2', gen_model='google/flan-t5-base',
-                 storage_path="./qdrant_storage", collection_name="recursive"):
+    def __init__(self, data_path="data", embed_model='mixedbread-ai/mxbai-embed-large-v1', gen_model='llama3.2:3b',
+                 storage_path="./qdrant_storage", collection_name="gizi_klinis", method="recursive"):
         """
         RAG Pipeline that uses Qdrant persistent storage for embeddings.
 
@@ -22,9 +23,10 @@ class RAGPipeline:
         """
         self.embedder = Embedder(embed_model)
         self.generator = Generator(gen_model)
-        self.vector_store = VectorStore(384, storage_path=storage_path, collection_name=collection_name)
+        self.vector_store = VectorStore(DIMENSIONS, storage_path=storage_path, collection_name=collection_name)
         self.retriever = Retriever(self.vector_store, self.embedder)
         self.collection_name = collection_name
+        self.method = method
         self.ner = NERProcessor()
 
         # Perform indexing only once at initialization (if data_path provided)
@@ -64,9 +66,9 @@ class RAGPipeline:
                     print(f"Skipping empty PDF: {file_path}")
                     continue
 
-                chunks = chunk_text(text, method=self.collection_name, chunk_size=500, overlap=50)
+                chunks = chunk_text(text, method=self.method, chunk_size=500, overlap=50)
 
-                chunks = self.ner.process_chunks(chunks)
+                # chunks = self.ner.process_chunks(chunks)
 
                 embeddings = self.embedder.embed(chunks)
 
@@ -88,5 +90,15 @@ class RAGPipeline:
         Retrieve context and generate an answer using the generator model.
         """
         retrieved = self.retriever.retrieve(query, top_k)
-        context = " ".join([r[0] for r in retrieved])
-        return self.generator.generate(context, query)
+        contexts = self._extract_contexts(retrieved)
+        context = " ".join([c[:800] for c in contexts])
+        try:
+            answer = self.generator.generate(context, query)
+        except Exception as e:
+            answer = ""
+        return answer, retrieved
+
+    @staticmethod
+    def _extract_contexts(retrieved):
+        """Normalize retriever output into a list of context strings."""
+        return [row[0] for row in retrieved if row and len(row) > 0]

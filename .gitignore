@@ -1,4 +1,4 @@
-video_notebooks/*
-src/__pycache__/*
-data/*
-qdrant_storage/*
+data/
+output_pdfs/
+qdrant_storage/
+notebook.ipynb

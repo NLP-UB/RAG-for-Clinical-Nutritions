@@ -1,10 +1,23 @@
-from transformers import pipeline
+import requests
 
 class Generator:
-    def __init__(self, model_name='google/flan-t5-base'):
-        self.model = pipeline('text2text-generation', model=model_name)
+    def __init__(self, model_name='llama3.2:3b', base_url="http://localhost:11434"):
+        self.model_name = model_name
+        self.base_url = base_url
 
     def generate(self, context, question):
-        prompt = f"Answer the question based on context:\nContext: {context}\nQuestion: {question}\nAnswer:"
-        result = self.model(prompt, max_length=256, truncation=True)
-        return result[0]['generated_text']
+        prompt = f"AJawab pertanyaan berdasarkan konteks berikut.\n Konteks: {context}\nPertanyaan: {question}\nJawaban:"
+        payload={
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/api/generate",
+            json = payload,
+            timeout=600
+        )
+        
+        response.raise_for_status()
+        return response.json()["response"].strip()
