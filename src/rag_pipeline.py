@@ -6,11 +6,11 @@ from .vector_store import VectorStore
 from .retriever import Retriever
 from .generator import Generator
 from .ner_processor import NERProcessor
-from .config import DIMENSIONS
 
 class RAGPipeline:
-    def __init__(self, data_path="data", embed_model='mixedbread-ai/mxbai-embed-large-v1', gen_model='llama3.2:3b',
-                 storage_path="./qdrant_storage", collection_name="gizi_klinis", method="recursive"):
+    def __init__(self, data_path="data", embed_model='embeddinggemma', gen_model='llama3.2:3b',
+                 storage_path="./qdrant_storage", collection_name="gizi_klinis", method="recursive",
+                 recreate_on_dimension_mismatch=False):
         """
         RAG Pipeline that uses Qdrant persistent storage for embeddings.
 
@@ -23,7 +23,13 @@ class RAGPipeline:
         """
         self.embedder = Embedder(embed_model)
         self.generator = Generator(gen_model)
-        self.vector_store = VectorStore(DIMENSIONS, storage_path=storage_path, collection_name=collection_name)
+        embedding_dim = self.embedder.embedding_dimension()
+        self.vector_store = VectorStore(
+            embedding_dim,
+            storage_path=storage_path,
+            collection_name=collection_name,
+            recreate_on_dimension_mismatch=recreate_on_dimension_mismatch,
+        )
         self.retriever = Retriever(self.vector_store, self.embedder)
         self.collection_name = collection_name
         self.method = method
@@ -70,7 +76,7 @@ class RAGPipeline:
 
                 # chunks = self.ner.process_chunks(chunks)
 
-                embeddings = self.embedder.embed(chunks)
+                embeddings = self.embedder.embed_documents(chunks)
 
                 all_chunks.extend(chunks)
                 all_embeddings.extend(embeddings)

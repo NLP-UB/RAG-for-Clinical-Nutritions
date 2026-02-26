@@ -4,5 +4,5 @@ class Retriever:
         self.embedder = embedder
 
     def retrieve(self, query, top_k=3):
-        q_emb = self.embedder.embed([query])[0]
+        q_emb = self.embedder.embed_documents([query])[0]
         return self.vector_store.search(q_emb, top_k=top_k)

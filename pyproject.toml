@@ -9,6 +9,7 @@ dependencies = [
     "bitsandbytes==0.46.1",
     "datasets>=4.1.1",
     "hf-xet>=1.2.0",
+    "langchain-ollama>=0.3.10",
     "matplotlib==3.10.5",
     "numpy==2.3.2",
     "pandas==2.2.3",
