@@ -1,11 +1,12 @@
 import argparse
+import time
 import numpy as np
 import pandas as pd
 from datasets import Dataset
 from bert_score import score
 from langchain_ollama import OllamaLLM
 from ragas import evaluate as ragas_evaluate
-from ragas.metrics.collections import (
+from ragas.metrics import (
     answer_relevancy,
     context_precision,
     context_recall,
@@ -119,11 +120,21 @@ def main():
     predictions = []
     retrieved_contexts = []
 
-    for q in questions:
-        print(f"Answering question: {q}")
+    total_questions = len(questions)
+    batch_start_time = time.time()
+    for idx, q in enumerate(questions, start=1):
         answer, retrieved = rag.answer_question(q, top_k=args.top_k)
         predictions.append(answer)
         retrieved_contexts.append(normalize_contexts(retrieved))
+        if idx % 10 == 0 or idx == total_questions:
+            progress = (idx / total_questions) * 100
+            batch_elapsed = time.time() - batch_start_time
+            batch_size = 10 if idx % 10 == 0 else (idx % 10)
+            print(
+                f"Progress: {idx}/{total_questions} questions ({progress:.1f}%) | "
+                f"Last {batch_size} question(s): {batch_elapsed:.2f}s"
+            )
+            batch_start_time = time.time()
 
     print("Computing BERTScore...")
     precision, recall, f1 = score(
