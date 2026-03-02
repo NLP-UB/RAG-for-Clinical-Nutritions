@@ -1,27 +1,192 @@
 import argparse
+import os
 import time
-import numpy as np
-import pandas as pd
-from datasets import Dataset
-from bert_score import score
-from langchain_ollama import OllamaLLM
-from ragas import evaluate as ragas_evaluate
-from ragas.metrics import (
-    answer_relevancy,
-    context_precision,
-    context_recall,
-    faithfulness,
-)
-from ragas.run_config import RunConfig
+from dataclasses import dataclass
 
-from src.embedder import Embedder
+from src.generator import Generator
 from src.rag_pipeline import RAGPipeline
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Evaluate RAG output with both BERTScore and RAGAS in one run."
-    )
+@dataclass
+class ExperimentConfig:
+    name: str
+    generator_model: str
+    use_rag: bool
+    output_suffix: str
+
+
+class CombinedRAGEvaluator:
+    def __init__(self, args):
+        self.args = args
+        self.df = self._load_dataset()
+        self.questions = self.df["question"].tolist()
+        self.references = self.df["answer"].tolist()
+
+    def _load_dataset(self):
+        import pandas as pd
+
+        df = pd.read_csv(self.args.dataset)
+        if "question" not in df.columns or "answer" not in df.columns:
+            raise ValueError("Dataset must contain 'question' and 'answer' columns.")
+
+        if self.args.limit is not None:
+            df = df.head(self.args.limit).copy()
+            print(f"Running evaluation on {len(df)} question(s) due to --limit={self.args.limit}")
+
+        return df
+
+    def _normalize_contexts(self, retrieved):
+        contexts = []
+        for item in retrieved:
+            if isinstance(item, (list, tuple)) and len(item) > 0:
+                contexts.append(str(item[0]))
+            else:
+                contexts.append(str(item))
+        return contexts
+
+    def _run_generation(self, experiment):
+        predictions = []
+        retrieved_contexts = []
+        total_questions = len(self.questions)
+        batch_start_time = time.time()
+
+        rag = None
+        generator = None
+        if experiment.use_rag:
+            rag = RAGPipeline(
+                data_path=self.args.docs,
+                collection_name=self.args.collection_name,
+                gen_model=experiment.generator_model,
+            )
+        else:
+            generator = Generator(experiment.generator_model)
+
+        for idx, question in enumerate(self.questions, start=1):
+            if experiment.use_rag:
+                answer, retrieved = rag.answer_question(question, top_k=self.args.top_k, use_rag=True)
+                contexts = self._normalize_contexts(retrieved)
+            else:
+                try:
+                    answer = generator.generate("", question)
+                except Exception:
+                    answer = ""
+                contexts = []
+
+            predictions.append(answer)
+            retrieved_contexts.append(contexts)
+
+            if idx % 10 == 0 or idx == total_questions:
+                progress = (idx / total_questions) * 100
+                batch_elapsed = time.time() - batch_start_time
+                batch_size = 10 if idx % 10 == 0 else (idx % 10)
+                print(
+                    f"[{experiment.name}] Progress: {idx}/{total_questions} ({progress:.1f}%) | "
+                    f"Last {batch_size} question(s): {batch_elapsed:.2f}s"
+                )
+                batch_start_time = time.time()
+
+        if rag is not None:
+            rag.close()
+
+        return predictions, retrieved_contexts
+
+    def _compute_bertscore(self, predictions):
+        from bert_score import score
+
+        print("Computing BERTScore...")
+        return score(
+            predictions,
+            self.references,
+            lang=self.args.bert_lang,
+            model_type=self.args.bert_model,
+        )
+
+    def _compute_ragas(self, experiment, predictions, retrieved_contexts):
+        from datasets import Dataset
+        from langchain_ollama import OllamaLLM
+        from ragas import evaluate as ragas_evaluate
+        from ragas.metrics import (
+            answer_relevancy,
+            context_precision,
+            context_recall,
+            faithfulness,
+        )
+        from ragas.run_config import RunConfig
+
+        from src.embedder import Embedder
+
+        print("Computing RAGAS metrics...")
+        ragas_dataset = Dataset.from_dict(
+            {
+                "user_input": self.questions,
+                "retrieved_contexts": retrieved_contexts,
+                "response": predictions,
+                "reference": self.references,
+            }
+        )
+
+        metrics = [answer_relevancy]
+        if experiment.use_rag:
+            metrics = [context_precision, context_recall, faithfulness, answer_relevancy]
+
+        ragas_result = ragas_evaluate(
+            dataset=ragas_dataset,
+            llm=OllamaLLM(model=self.args.ragas_llm),
+            embeddings=Embedder(),
+            batch_size=self.args.ragas_batch_size,
+            run_config=RunConfig(timeout=self.args.ragas_timeout),
+            metrics=metrics,
+        )
+        return ragas_result.to_pandas()
+
+    def _build_output_path(self, suffix):
+        base, ext = os.path.splitext(self.args.output)
+        ext = ext if ext else ".csv"
+        return f"{base}_{suffix}{ext}"
+
+    def run_experiment(self, experiment):
+        print(
+            f"\nRunning experiment: {experiment.name} "
+            f"(model={experiment.generator_model}, use_rag={experiment.use_rag})"
+        )
+
+        predictions, retrieved_contexts = self._run_generation(experiment)
+        precision, recall, f1 = self._compute_bertscore(predictions)
+        ragas_df = self._compute_ragas(experiment, predictions, retrieved_contexts)
+
+        output_df = self.df.copy()
+        output_df["experiment"] = experiment.name
+        output_df["generated_answer"] = predictions
+        output_df["retrieved_contexts"] = retrieved_contexts
+        output_df["bertscore_precision"] = precision.tolist()
+        output_df["bertscore_recall"] = recall.tolist()
+        output_df["bertscore_f1"] = f1.tolist()
+
+        for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+            if col in ragas_df.columns:
+                output_df[col] = ragas_df[col].tolist()
+
+        output_path = self._build_output_path(experiment.output_suffix)
+        output_df.to_csv(output_path, index=False)
+
+        print(f"Saved combined results to: {output_path}")
+        print(f"BERTScore Precision: {precision.mean().item():.4f}")
+        print(f"BERTScore Recall: {recall.mean().item():.4f}")
+        print(f"BERTScore F1: {f1.mean().item():.4f}")
+        import numpy as np
+
+        for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+            if col in output_df.columns:
+                print(f"RAGAS {col}: {np.nanmean(output_df[col].fillna(0)):.4f}")
+
+        return {
+            "experiment": experiment.name,
+            "output_path": output_path,
+            "bertscore_f1_mean": float(f1.mean().item()),
+        }
+
+
+def add_arguments(parser):
     parser.add_argument(
         "--dataset",
         type=str,
@@ -32,7 +197,7 @@ def parse_args():
         "--output",
         type=str,
         default="data/rag_combined_results.csv",
-        help="Output CSV path.",
+        help="Base output CSV path. A suffix per experiment will be added.",
     )
     parser.add_argument(
         "--docs",
@@ -88,104 +253,71 @@ def parse_args():
         default=32,
         help="RAGAS batch size.",
     )
+    parser.add_argument(
+        "--llama-model",
+        type=str,
+        default="llama3.2:3b",
+        help="Llama model used for experiment 1 and 2.",
+    )
+    parser.add_argument(
+        "--gpt-oss-model",
+        type=str,
+        default="gpt-oss",
+        help="gpt-oss model used for experiment 3 and 4.",
+    )
+    return parser
+
+
+def run_four_experiments(args):
+    evaluator = CombinedRAGEvaluator(args)
+    experiments = [
+        ExperimentConfig(
+            name="llama_with_rag",
+            generator_model=args.llama_model,
+            use_rag=True,
+            output_suffix="llama_with_rag",
+        ),
+        ExperimentConfig(
+            name="llama_without_rag",
+            generator_model=args.llama_model,
+            use_rag=False,
+            output_suffix="llama_without_rag",
+        ),
+        ExperimentConfig(
+            name="gpt_oss_with_rag",
+            generator_model=args.gpt_oss_model,
+            use_rag=True,
+            output_suffix="gpt_oss_with_rag",
+        ),
+        ExperimentConfig(
+            name="gpt_oss_without_rag",
+            generator_model=args.gpt_oss_model,
+            use_rag=False,
+            output_suffix="gpt_oss_without_rag",
+        ),
+    ]
+
+    summaries = []
+    for experiment in experiments:
+        summaries.append(evaluator.run_experiment(experiment))
+
+    print("\nAll experiments finished.")
+    for item in summaries:
+        print(f"- {item['experiment']}: {item['output_path']}")
+    return summaries
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run 4 RAG/non-RAG experiments with llama and gpt-oss."
+    )
+    add_arguments(parser)
     return parser.parse_args()
-
-
-def normalize_contexts(retrieved):
-    contexts = []
-    for item in retrieved:
-        if isinstance(item, (list, tuple)) and len(item) > 0:
-            contexts.append(str(item[0]))
-        else:
-            contexts.append(str(item))
-    return contexts
 
 
 def main():
     args = parse_args()
-
-    df = pd.read_csv(args.dataset)
-    if "question" not in df.columns or "answer" not in df.columns:
-        raise ValueError("Dataset must contain 'question' and 'answer' columns.")
-
-    if args.limit is not None:
-        df = df.head(args.limit).copy()
-        print(f"Running evaluation on {len(df)} question(s) due to --limit={args.limit}")
-
-    questions = df["question"].tolist()
-    references = df["answer"].tolist()
-
-    rag = RAGPipeline(data_path=args.docs, collection_name=args.collection_name)
-
-    predictions = []
-    retrieved_contexts = []
-
-    total_questions = len(questions)
-    batch_start_time = time.time()
-    for idx, q in enumerate(questions, start=1):
-        answer, retrieved = rag.answer_question(q, top_k=args.top_k)
-        predictions.append(answer)
-        retrieved_contexts.append(normalize_contexts(retrieved))
-        if idx % 10 == 0 or idx == total_questions:
-            progress = (idx / total_questions) * 100
-            batch_elapsed = time.time() - batch_start_time
-            batch_size = 10 if idx % 10 == 0 else (idx % 10)
-            print(
-                f"Progress: {idx}/{total_questions} questions ({progress:.1f}%) | "
-                f"Last {batch_size} question(s): {batch_elapsed:.2f}s"
-            )
-            batch_start_time = time.time()
-
-    print("Computing BERTScore...")
-    precision, recall, f1 = score(
-        predictions,
-        references,
-        lang=args.bert_lang,
-        model_type=args.bert_model,
-    )
-
-    print("Computing RAGAS metrics...")
-    ragas_dataset = Dataset.from_dict(
-        {
-            "user_input": questions,
-            "retrieved_contexts": retrieved_contexts,
-            "response": predictions,
-            "reference": references,
-        }
-    )
-    ragas_result = ragas_evaluate(
-        dataset=ragas_dataset,
-        llm=OllamaLLM(model=args.ragas_llm),
-        embeddings=Embedder(),
-        batch_size=args.ragas_batch_size,
-        run_config=RunConfig(timeout=args.ragas_timeout),
-        metrics=[context_precision, context_recall, faithfulness, answer_relevancy],
-    )
-    ragas_df = ragas_result.to_pandas()
-
-    output_df = df.copy()
-    output_df["generated_answer"] = predictions
-    output_df["retrieved_contexts"] = retrieved_contexts
-    output_df["bertscore_precision"] = precision.tolist()
-    output_df["bertscore_recall"] = recall.tolist()
-    output_df["bertscore_f1"] = f1.tolist()
-
-    for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
-        if col in ragas_df.columns:
-            output_df[col] = ragas_df[col].tolist()
-
-    output_df.to_csv(args.output, index=False)
-
-    print(f"Saved combined results to: {args.output}")
-    print(f"BERTScore Precision: {precision.mean().item():.4f}")
-    print(f"BERTScore Recall: {recall.mean().item():.4f}")
-    print(f"BERTScore F1: {f1.mean().item():.4f}")
-
-    for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
-        if col in output_df.columns:
-            print(f"RAGAS {col}: {np.nanmean(output_df[col].fillna(0)):.4f}")
-
-    rag.vector_store.client.close()
+    run_four_experiments(args)
 
 
 if __name__ == "__main__":

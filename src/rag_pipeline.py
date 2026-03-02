@@ -73,7 +73,6 @@ class RAGPipeline:
                     continue
 
                 chunks = chunk_text(text, method=self.method, chunk_size=500, overlap=50)
-
                 # chunks = self.ner.process_chunks(chunks)
 
                 embeddings = self.embedder.embed_documents(chunks)
@@ -91,10 +90,13 @@ class RAGPipeline:
         else:
             print("No valid PDF content to index.")
 
-    def answer_question(self, query, top_k=3):
+    def answer_question(self, query, top_k=3, use_rag=True):
         """
-        Retrieve context and generate an answer using the generator model.
+        Generate an answer with or without RAG retrieval.
         """
+        if not use_rag:
+            return self.answer_question_without_rag(query), []
+
         retrieved = self.retriever.retrieve(query, top_k)
         contexts = self._extract_contexts(retrieved)
         context = " ".join([c[:800] for c in contexts])
@@ -104,7 +106,18 @@ class RAGPipeline:
             answer = ""
         return answer, retrieved
 
+    def answer_question_without_rag(self, query):
+        """Generate answer directly from the LLM without retrieval."""
+        try:
+            return self.generator.generate("", query)
+        except Exception:
+            return ""
+
     @staticmethod
     def _extract_contexts(retrieved):
         """Normalize retriever output into a list of context strings."""
         return [row[0] for row in retrieved if row and len(row) > 0]
+
+    def close(self):
+        """Close underlying vector store client."""
+        self.vector_store.client.close()
