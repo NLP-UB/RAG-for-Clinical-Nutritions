@@ -1,5 +1,6 @@
 import argparse
-from evaluate_rag_combined import add_arguments as add_eval_arguments, run_four_experiments
+from src.eval_cli import add_eval_arguments
+from src.evaluator import run_four_experiments
 from src.rag_pipeline import RAGPipeline
 
 def main():

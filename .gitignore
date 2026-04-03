@@ -3,3 +3,5 @@ data/
 output_pdfs/
 qdrant_storage/
 notebook.ipynb
+.venv/
+__pycache__/
