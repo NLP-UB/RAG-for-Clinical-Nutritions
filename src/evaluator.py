@@ -65,6 +65,18 @@ class CombinedRAGEvaluator:
 
         output_path = build_output_path(self.args.output, experiment.output_suffix)
         save_results_csv(output_df, output_path)
+        
+        print(f"Saved combined results to: {output_path}")
+        if run_bert:
+            print(f"BERTScore Precision: {p.mean().item():.4f}")
+            print(f"BERTScore Recall: {r.mean().item():.4f}")
+            print(f"BERTScore F1: {f1.mean().item():.4f}")
+        if run_ragas:
+            import numpy as np
+
+            for col in ["context_precision", "context_recall", "faithfulness", "answer_relevancy"]:
+                if col in output_df.columns:
+                    print(f"RAGAS {col}: {np.nanmean(output_df[col].fillna(0)):.4f}")
         return {"experiment": experiment.name, "output_path": output_path, "action": self.args.action}
 
 
