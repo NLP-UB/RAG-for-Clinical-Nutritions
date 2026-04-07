@@ -6,7 +6,7 @@ class Generator:
         self.base_url = base_url
 
     def generate(self, context, question):
-        prompt = f"AJawab pertanyaan berdasarkan konteks berikut.\n Konteks: {context}\nPertanyaan: {question}\nJawaban:"
+        prompt = f"Pertanyaan: {question}\n\nKonteks: {context} \n\nFormat jawaban: 1 paragraf ringkas padat jelas"
         payload={
             "model": self.model_name,
             "prompt": prompt,
