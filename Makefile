@@ -3,7 +3,7 @@ PYTHON ?= $(UV) run python
 
 DATASET ?= data/rag_dataset.csv
 OUTPUT ?= results/rag_combined_results.csv
-DOCS ?=
+DOCS ?= output_pdfs
 COLLECTION ?= gizi_klinis
 EXPERIMENT ?= llama_with_rag
 ACTION ?= generate
@@ -12,7 +12,7 @@ LIMIT ?=
 TOP_K ?= 3
 BERT_MODEL ?= bert-base-uncased
 BERT_LANG ?= id
-RAGAS_LLM ?= llama3.2:3b
+RAGAS_LLM ?= llama3.1:8b
 RAGAS_TIMEOUT ?= 7200
 RAGAS_BATCH_SIZE ?= 32
 LLAMA_MODEL ?= llama3.2:3b

@@ -33,11 +33,18 @@ class RAGPipeline:
         self.retriever = Retriever(self.vector_store, self.embedder)
         self.collection_name = collection_name
         self.method = method
-        self.ner = NERProcessor()
+        # self.ner = NERProcessor()
 
         # Perform indexing only once at initialization (if data_path provided)
-        if data_path and self._is_vector_store_empty():
-            self._index_all_pdfs(data_path)
+        is_empty = self._is_vector_store_empty()
+        if is_empty:
+            if data_path:
+                self._index_all_pdfs(data_path)
+            else:
+                raise ValueError(
+                    f"Collection '{self.collection_name}' is empty, but no docs path was provided. "
+                    "Set --docs to your PDF directory so retrieval can be indexed."
+                )
         else:
             print("Using existing Qdrant vector store, skipping indexing.")
 
@@ -101,7 +108,7 @@ class RAGPipeline:
         contexts = self._extract_contexts(retrieved)
         context = " ".join([c[:800] for c in contexts])
         try:
-            answer = self.generator.generate(context, query)
+            answer = self.generator.generate(context, query, use_rag=True)
         except Exception:
             answer = ""
         return answer, retrieved
@@ -109,7 +116,7 @@ class RAGPipeline:
     def answer_question_without_rag(self, query):
         """Generate answer directly from the LLM without retrieval."""
         try:
-            return self.generator.generate("", query)
+            return self.generator.generate("", query, use_rag=False)
         except Exception:
             return ""
 

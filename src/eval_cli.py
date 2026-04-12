@@ -12,13 +12,14 @@ from src.eval_defaults import (
     DEFAULT_RAGAS_TIMEOUT,
     DEFAULT_TOP_K,
     EXPERIMENT_CHOICES,
+    DEFAULT_DOCS,
 )
 
 
 def add_eval_arguments(parser):
     parser.add_argument("--dataset", type=str, default=DEFAULT_DATASET)
     parser.add_argument("--output", type=str, default=DEFAULT_OUTPUT)
-    parser.add_argument("--docs", type=str, default=None)
+    parser.add_argument("--docs", type=str, default=DEFAULT_DOCS)
     parser.add_argument("--collection-name", type=str, default=DEFAULT_COLLECTION_NAME)
     parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     parser.add_argument("--limit", type=int, default=None)

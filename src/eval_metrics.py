@@ -1,3 +1,5 @@
+import inspect
+
 import pandas as pd
 
 
@@ -46,7 +48,7 @@ def compute_ragas(
 
     result = ragas_evaluate(
         dataset=ragas_dataset,
-        llm=OllamaLLM(model=ragas_llm),
+        llm=OllamaLLM(model=ragas_llm, num_ctx=4096),
         embeddings=Embedder(),
         batch_size=ragas_batch_size,
         run_config=RunConfig(timeout=ragas_timeout),

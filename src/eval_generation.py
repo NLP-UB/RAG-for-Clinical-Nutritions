@@ -38,7 +38,7 @@ def run_generation(experiment, questions: list[str], args) -> tuple[list[str], l
                 contexts = _normalize_contexts(retrieved)
             else:
                 try:
-                    answer = generator.generate("", question)
+                    answer = generator.generate("", question, use_rag=False)
                 except Exception:
                     answer = ""
                 contexts = []

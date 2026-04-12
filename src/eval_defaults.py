@@ -13,11 +13,12 @@ DEFAULT_DATASET = "data/rag_dataset.csv"
 DEFAULT_OUTPUT = "results/rag_combined_results.csv"
 DEFAULT_COLLECTION_NAME = "gizi_klinis"
 DEFAULT_TOP_K = 3
+DEFAULT_DOCS = "output_pdfs"
 
 DEFAULT_BERT_MODEL = "bert-base-uncased"
 DEFAULT_BERT_LANG = "id"
 
-DEFAULT_RAGAS_LLM = "llama3.2:3b"
+DEFAULT_RAGAS_LLM = "llama3.1:8b"
 DEFAULT_RAGAS_TIMEOUT = 7200
 DEFAULT_RAGAS_BATCH_SIZE = 32
 
