@@ -1,5 +1,5 @@
 import re
-from sentence_transformers import SentenceTransformer, util
+# from sentence_transformers import SentenceTransformer, util
 import fitz  # PyMuPDF
 
 def load_pdf(file_path):
@@ -39,20 +39,7 @@ def chunk_text(
 
     chunks = []
 
-    # ------------------------------
-    # Method 1: Simple Character Splitting
-    # ------------------------------
-    if method == "character":
-        start = 0
-        while start < len(text):
-            end = min(start + chunk_size, len(text))
-            chunks.append(text[start:end])
-            start += chunk_size - overlap
-
-    # ------------------------------
-    # Method 2: Recursive Character Text Splitting
-    # ------------------------------
-    elif method == "recursive":
+    if method == "recursive":
         def recursive_split(text, separators):
             if not separators:
                 return [text]
@@ -79,44 +66,6 @@ def chunk_text(
                 temp = part
         if temp:
             chunks.append(temp.strip())
-
-    # ------------------------------
-    # Method 3: Document-Specific Splitting
-    # ------------------------------
-    elif method == "document":
-        # Basic heuristic for structured docs
-        parts = re.split(r"(?:\n\s*\n|```.*?```)", text)
-        temp = ""
-        for part in parts:
-            if len(temp) + len(part) <= chunk_size:
-                temp += part + "\n"
-            else:
-                chunks.append(temp.strip())
-                temp = part
-        if temp:
-            chunks.append(temp.strip())
-
-    # ------------------------------
-    # Method 4: Semantic Splitting (Embedding-based)
-    # ------------------------------
-    elif method == "semantic":
-        model = SentenceTransformer(model_name)
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        embeddings = model.encode(sentences, convert_to_tensor=True)
-
-        current_chunk = [sentences[0]]
-        current_emb = embeddings[0]
-        for i in range(1, len(sentences)):
-            sim = util.cos_sim(current_emb, embeddings[i])
-            if sim < 0.5 or sum(len(s) for s in current_chunk) > chunk_size:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [sentences[i]]
-                current_emb = embeddings[i]
-            else:
-                current_chunk.append(sentences[i])
-                current_emb = (current_emb + embeddings[i]) / 2
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
 
     else:
         raise ValueError(f"Invalid chunking method: {method}. Choose from "

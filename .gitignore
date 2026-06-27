@@ -5,3 +5,4 @@ qdrant_storage/
 notebook.ipynb
 .venv/
 __pycache__/
+results/

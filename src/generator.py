@@ -15,7 +15,7 @@ class Generator:
         4) Jangan ubah angka, satuan, atau nilai lab dari konteks.
         5) Jawaban ringkas dan langsung ke pertanyaan.
 
-        KONTEXT:
+        KONTEKS:
         {context}
 
         PERTANYAAN:
